@@ -1,0 +1,115 @@
+---
+title: Regression Analysis using Chaney’s Data
+author: Minna Heim
+---
+
+```{r setup, message = FALSE}
+library(tidyverse)
+library(estimatr)
+library(stargazer)
+arab <- read_csv("arabspringdata_2024.csv")
+head(arab)
+view(arab)
+```
+
+### Arab Conquest
+arab conquest = the product of the proportion of a country’s landmass that was persistently ruled by Muslim dynasties (after setting Israel=0) and an indicator that is equal to one if at least half of the landmasswas still Muslim at the beginning of 20th century. 
+```{r}
+# set pmuslim = 0 for israel
+arab <- arab |>
+  mutate(pmuslim = case_when(
+    country == "Israel" & pmuslim > 0 ~ 0,
+    TRUE ~ pmuslim
+  ))
+# create arabconquest = product of pmuslim & half1900
+arab <- arab |>
+  mutate(arabconquest = pmuslim * half1900)
+```
+
+### nonarabarabconquest
+
+```{r}
+arab <- arab |>
+  mutate(nonarabarabconquest = case_when(
+    arableague == 0 & arabconquest > 0 ~ 1,
+    TRUE ~ 0
+  ))
+
+view(arab)
+```
+
+### Summary Statistics
+```{r, include = FALSE}
+
+table2 <- as.data.frame(arab) |> select(c(muslimmajority, arableague, arabconquest, nonarabarabconquest, fuelendowed))
+
+# TODO: do I need to get more ln(rain) vars?
+table4 <- as.data.frame(arab) |> select(c(arabconquest, muslimmajority, lrain))
+
+stargazer(data = table2, type = "html", title = "Summary Statistics: Table2", out = "summary_stats_table2.htm")
+
+stargazer(data = table4, type = "html", title = "Summary Statistics: Table 4", out = "summary_stats_table4.htm")
+```
+
+{{< include summary_stats_table2.htm >}}
+{{< include summary_stats_table4.htm >}}
+
+
+d.	Non Muslim-Majority countries?
+
+### Countries with...
+```{r}
+non_arableague <- sum(arab$arableague == 0)
+print(non_arableague)
+
+arab_conquest <- sum(arab$arabconquest > 0)
+print(arab_conquest)
+
+nonarab_arabconquest <- arab |>
+  filter(arableague == 0 & arab_conquest > 0) |>
+  nrow()
+print(nonarab_arabconquest)
+
+nonmuslim <- sum(arab$muslimmajority == 0)
+print(nonmuslim)
+
+```
+
+
+### 4
+Regress “normpolity” (normalized democracy score in 2010) on “muslimmajority”. For this and all subsequent regressions, use the “robust” option and report all of your regression results in a professionally formatted table. Interpret the coefficient and tests for significance.
+
+```{r}
+poli_mus <- lm_robust(normpolity ~ muslimmajority, data = arab)
+summary(poli_mus)
+```
+
+Interpretation: When regressing muslimmajority in a country on their normalized democratic score, you can see that for a change from non-muslimmajority to muslim majority, the average democractic score decreases by 0.31 points, these results are statistically significant. 
+
+### 5a
+You add the variables: arableague, arabconquest, fuel, oceania, europe, asia americas, africa -> africa ommitted, if not multicolinearity
+```{r}
+poli_mus1 <- lm_robust(normpolity ~ muslimmajority + arableague + arabconquest + fuelendowed + oceania + europe + asia + americas, data = arab)
+summary(poli_mus1)
+```
+
+Interpretation: When regressing muslimmajority in a country on their normalized democratic score, holding the other listed factors constant, you can see that for a change from non-muslimmajority to muslim majority, the average democractic score decreases by 0.02 points, these results are statistically significant, and show that including these variables takes a lot of effect away from the upper regression, where the b1 was still -0.3, now it is only -0.02, meaning a lot of the other variables most likely explain the change in democracy.
+### 5b
+I would say these are **good** controls since they reduce the bias we see in the previous regressions (?)
+
+
+### 5c
+
+Run the same regression as in 5a, except that you replace the variable arabconquest with the variable nonarabarabconquest. 
+<!-- TODO: how do i test the hypothesis here -->
+Then test the hypothesis that “Arab league countries” have the same normalized democracy score in 2010 as “Non-Arab League, Arab Conquest” countries in the third regression. What does this test show?
+
+```{r}
+poli_mus1 <- lm_robust(normpolity ~ muslimmajority + arableague + nonarabarabconquest + fuelendowed + oceania + europe + asia + americas, data = arab)
+summary(poli_mus1)
+```
+
+Interpretation: when looking at the differences in democracy with arab league and non-arab arab conquest countries, we see that there is a pronounced difference, where changing having a country which is part of the arab league changes the democracy score by an average of -0.16 whereas for non-arab league but arab countries, this decreases democracy only by 0.03 points.
+
+### 5d
+What needs to be done if one wants to replicate exactly the first three columns of Table 2? Do so and report all of your regression results in a professionally formatted table. Interpret the coefficient. (Only the coefficient part is needed)
