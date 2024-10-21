@@ -1,32 +1,39 @@
 ---
 title: Regression Analysis using Chaney’s Data
-author: Minna Heim
+author: Minna Heim (20606091), Sevda Karakas (22715551), Fadi Mansour (20751293)
+output: pdf
 ---
 
 ```{r setup, message = FALSE}
 library(tidyverse)
 library(estimatr)
 library(stargazer)
+library(sandwich)
+library(lmtest)
 arab <- read_csv("arabspringdata_2024.csv")
 head(arab)
-view(arab)
+# view(arab)
+
 ```
 
-### Arab Conquest
-arab conquest = the product of the proportion of a country’s landmass that was persistently ruled by Muslim dynasties (after setting Israel=0) and an indicator that is equal to one if at least half of the landmasswas still Muslim at the beginning of 20th century. 
+### 1.a.
+Arab Conquest = the product of the proportion of a country’s landmass that was persistently ruled by Muslim dynasties (after setting Israel=0) and an indicator that is equal to one if at least half of the landmasswas still Muslim at the beginning of 20th century. 
+
 ```{r}
 # set pmuslim = 0 for israel
 arab <- arab |>
-  mutate(pmuslim = case_when(
-    country == "Israel" & pmuslim > 0 ~ 0,
-    TRUE ~ pmuslim
+  mutate(islam1100 = case_when(
+    country == "Israel" & islam1100 > 0 ~ 0,
+    TRUE ~ islam1100
   ))
 # create arabconquest = product of pmuslim & half1900
 arab <- arab |>
-  mutate(arabconquest = pmuslim * half1900)
+  mutate(arabconquest = islam1100 * half1900)
 ```
 
-### nonarabarabconquest
+We have to assume that `islam1100` is the proportion of a country's landmass that was persistently ruled by Muslim dynasties, and `half1900` is an indicator that is equal to one if at least half of the landmass was still Muslim at the beginning of the 20th century. But since there are no descriptions of the variables, we have to assume that this is the case.
+
+### 1.b.
 
 ```{r}
 arab <- arab |>
@@ -35,29 +42,48 @@ arab <- arab |>
     TRUE ~ 0
   ))
 
-view(arab)
+# view(arab)
 ```
 
-### Summary Statistics
+### 2. Summary Statistics lrain
 ```{r, include = FALSE}
+# get ln^2(rain) and ln^3(rain)
+arab <- arab |>
+  mutate(l2rain = lrain^2) |>
+  mutate(l3rain = lrain^3)
+# view(arab)
 
-table2 <- as.data.frame(arab) |> select(c(muslimmajority, arableague, arabconquest, nonarabarabconquest, fuelendowed))
+# remove NA cols in arab
+table_vars <- as.data.frame(arab) |>
+  select(-c(noyouth2010, unemp2010, thriving2010)) |>
+  select(c(
+    normpolity, muslimmajority, arableague, arabconquest, nonarabarabconquest, fuelendowed,
+    lrain, l2rain, l3rain
+  ))
 
-# TODO: do I need to get more ln(rain) vars?
-table4 <- as.data.frame(arab) |> select(c(arabconquest, muslimmajority, lrain))
-
-stargazer(data = table2, type = "html", title = "Summary Statistics: Table2", out = "summary_stats_table2.htm")
-
-stargazer(data = table4, type = "html", title = "Summary Statistics: Table 4", out = "summary_stats_table4.htm")
+# Generate summary statistics using stargazer
+stargazer(
+  data = table_vars,
+  title = "Summary Statistics",
+  type = "html",
+  out = "summary_stats_table24.htm",
+  covariate.labels = c(
+    "Normalized Polity Score",
+    "Muslim Majority",
+    "Arab League",
+    "Arab Conquest",
+    "Non-Arab Arab Conquest",
+    "Fuel Endowed",
+    "ln(Rainfall)",
+    "ln2(Rainfall)",
+    "ln3(Rainfall)"
+  )
+)
 ```
 
-{{< include summary_stats_table2.htm >}}
-{{< include summary_stats_table4.htm >}}
+{{< include summary_stats_table24.htm >}}
 
-
-d.	Non Muslim-Majority countries?
-
-### Countries with...
+## 3.
 ```{r}
 non_arableague <- sum(arab$arableague == 0)
 print(non_arableague)
@@ -66,7 +92,7 @@ arab_conquest <- sum(arab$arabconquest > 0)
 print(arab_conquest)
 
 nonarab_arabconquest <- arab |>
-  filter(arableague == 0 & arab_conquest > 0) |>
+  filter(nonarabarabconquest > 0) |>
   nrow()
 print(nonarab_arabconquest)
 
@@ -75,41 +101,118 @@ print(nonmuslim)
 
 ```
 
+Interpretation: There are 139 countries that are not part of the Arab League, 32 countries that have been subject to the Arab Conquest, 13 countries that were subject to the Arab Conquest but are not part of the Arab League, and 117 countries that are not Muslim-majority.
 
-### 4
+### 4.
 Regress “normpolity” (normalized democracy score in 2010) on “muslimmajority”. For this and all subsequent regressions, use the “robust” option and report all of your regression results in a professionally formatted table. Interpret the coefficient and tests for significance.
 
-```{r}
-poli_mus <- lm_robust(normpolity ~ muslimmajority, data = arab)
-summary(poli_mus)
+```{r, results = 'hide'}
+formula <- "normpolity ~ muslimmajority"
+poli_mus <- lm(formula, data = arab)
+se <- sqrt(diag(vcovHC(poli_mus, type = "HC1")))
+stargazer(poli_mus, type = "html", out = "poli_mus.htm", se = list(se))
 ```
+
+{{< include poli_mus.htm >}}
 
 Interpretation: When regressing muslimmajority in a country on their normalized democratic score, you can see that for a change from non-muslimmajority to muslim majority, the average democractic score decreases by 0.31 points, these results are statistically significant. 
 
-### 5a
+### 5.a.
 You add the variables: arableague, arabconquest, fuel, oceania, europe, asia americas, africa -> africa ommitted, if not multicolinearity
-```{r}
-poli_mus1 <- lm_robust(normpolity ~ muslimmajority + arableague + arabconquest + fuelendowed + oceania + europe + asia + americas, data = arab)
-summary(poli_mus1)
+```{r, results = 'hide'}
+formula <- "normpolity ~ muslimmajority + arableague + arabconquest + fuelendowed + oceania + europe + asia + americas"
+poli_mus1 <- lm(formula, data = arab)
+se <- sqrt(diag(vcovHC(poli_mus1, type = "HC1")))
+stargazer(poli_mus1, type = "html", out = "poli_mus1.htm", se = list(se))
 ```
+
+{{< include poli_mus1.htm >}}
 
 Interpretation: When regressing muslimmajority in a country on their normalized democratic score, holding the other listed factors constant, you can see that for a change from non-muslimmajority to muslim majority, the average democractic score decreases by 0.02 points, these results are statistically significant, and show that including these variables takes a lot of effect away from the upper regression, where the b1 was still -0.3, now it is only -0.02, meaning a lot of the other variables most likely explain the change in democracy.
-### 5b
-I would say these are **good** controls since they reduce the bias we see in the previous regressions (?)
 
+### 5.b.
 
-### 5c
+`arableague` is a good control, we see a correlation, but no causal link between the variable arab league and the muslim majority, but we see that since beta2 isn't 0.
 
-Run the same regression as in 5a, except that you replace the variable arabconquest with the variable nonarabarabconquest. 
-<!-- TODO: how do i test the hypothesis here -->
-Then test the hypothesis that “Arab league countries” have the same normalized democracy score in 2010 as “Non-Arab League, Arab Conquest” countries in the third regression. What does this test show?
-
+`arabconquest` is a bad control, since we believe that there is a causal link between the arab conquest and the muslim majority, since the muslim majority is a product of the historical context of arab conquests and not independent.
+ 
 ```{r}
-poli_mus1 <- lm_robust(normpolity ~ muslimmajority + arableague + nonarabarabconquest + fuelendowed + oceania + europe + asia + americas, data = arab)
-summary(poli_mus1)
+cor(arab$arabconquest, arab$muslimmajority)
 ```
 
-Interpretation: when looking at the differences in democracy with arab league and non-arab arab conquest countries, we see that there is a pronounced difference, where changing having a country which is part of the arab league changes the democracy score by an average of -0.16 whereas for non-arab league but arab countries, this decreases democracy only by 0.03 points.
+`fuel_endowed` is a good control, we see a correlation, but no causal link between the variable fuel endowed and the muslim majority, but we see that since beta2 isn't 0, that there is an effect.
 
-### 5d
+```{r}
+cor(arab$fuelendowed, arab$muslimmajority)
+cor(arab$fuelendowed, arab$normpolity)
+```
+
+`oceania`, `europe`, `asia`, `americas` are good controls, because we see no causal link between the explanatory variables, if we exclude one as not to get perfect multicolinearity and fall into the dummy variable trap.
+
+```{r}
+cor(arab$oceania, arab$muslimmajority)
+cor(arab$europe, arab$muslimmajority)
+cor(arab$asia, arab$muslimmajority)
+cor(arab$americas, arab$muslimmajority)
+```
+
+
+### 5.c.
+Run the same regression as in 5a, except that you replace the variable `arabconquest` with the variable `nonarabarabconquest`. 
+
+Then test the hypothesis that “Arab league countries” have the same normalized democracy score in 2010 as “Non-Arab League, Arab Conquest” countries in the third regression. What does this test show?
+
+```{r, results = 'hide'}
+formula <- "normpolity ~ muslimmajority + arableague + nonarabarabconquest + fuelendowed + oceania + europe + asia + americas"
+poli_mus2 <- lm(formula, data = arab)
+se <- sqrt(diag(vcovHC(poli_mus2, type = "HC1")))
+stargazer(poli_mus2, type = "html", out = "poli_mus2.htm", se = list(se))
+```
+
+{{< include poli_mus2.htm >}}
+
+Interpretation: when looking at the differences in democracy with arab league and non-arab arab conquest countries, we see that there is a pronounced difference, when regressing with `nonaranarabconquest` the coefficient is -0.173, and it is statistically insiginificant, when running the regression with `arabconquest` however, it is statistically significant and the effect is -0.314.
+
+This might mean that the cultural hypothesis might not apply here, i.e. that the arab league as a proxy for cultural similarity is not enough to conclude democratic deficit.
+
+### 5.d.
+<!-- TODO: 5d until 7 -->
 What needs to be done if one wants to replicate exactly the first three columns of Table 2? Do so and report all of your regression results in a professionally formatted table. Interpret the coefficient. (Only the coefficient part is needed)
+
+#### Regression 1
+<!-- TODO: füge die 3 tabellen zusammen -->
+```{r, results = 'hide'}
+## Regression 1
+f1 <- "normpolity ~ muslimmajority"
+r1 <- lm(f1, data = arab)
+se1 <- sqrt(diag(vcovHC(r1, type = "HC1")))
+
+## Regression 2
+f2 <- "normpolity ~ muslimmajority + arableague"
+r2 <- lm(f2, data = arab)
+se2 <- sqrt(diag(vcovHC(r1, type = "HC1")))
+
+# Regression 3
+f3 <- "normpolity ~ muslimmajority + arableague + arabconquest"
+r3 <- lm(f3, data = arab)
+se3 <- sqrt(diag(vcovHC(r3, type = "HC1")))
+
+stargazer(c(r1, r2, r3), type = "html", out = "r3.htm")
+```
+
+{{< include r3.htm >}}
+#### 5.e. 
+- real gdp - neutral?
+- anticorruption policy - good
+- freedom of expression - bad control  (weak institutions)
+-> fadi's table
+
+### 5.f.
+-> fadi's table
+Interpretation: effect not causal, further effects still needed
+
+### 6.
+Sevda's answer: In Muslim-majority countries, a one-unit increase in fertility is associated with a 0.051-
+point rise in the democracy score.
+
+### 7. 
